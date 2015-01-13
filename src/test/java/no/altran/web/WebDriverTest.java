@@ -1,47 +1,172 @@
 package no.altran.web;
 
+import net.whydah.identity.Main;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.chrome.ChromeDriver;
+import org.openqa.selenium.firefox.FirefoxDriver;
 import org.openqa.selenium.htmlunit.HtmlUnitDriver;
-import java.net.MalformedURLException;
+import org.openqa.selenium.remote.DesiredCapabilities;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import sun.jvm.hotspot.runtime.Threads;
+
+import java.io.IOException;
+import java.util.concurrent.Executor;
+
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class WebDriverTest {
+    private static final String ADMIN_URL = "ADMIN_URL";
+    //WebDriver driver = new HtmlUnitDriver();
+    // -Dwebdriver.chrome.driver="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    //WebDriver driver = new ChromeDriver(DesiredCapabilities.chrome());
+
+    final WebDriver driver = new FirefoxDriver();
+    final Logger logger = LoggerFactory.getLogger(WebDriverTest.class);
+
+
+    @Before
+    public void setUp() {
+        String adminUrl = System.getenv(ADMIN_URL);
+        if (adminUrl == null) {
+            adminUrl = System.getProperty(ADMIN_URL);
+        }
+        if (adminUrl == null) {
+            adminUrl = "http://localhost:9996/useradmin/";
+        }
+        {
+            //Log in
+            driver.get(adminUrl);
+            // Find the text input element by its name
+            driver.findElement(By.id("user_session_login")).sendKeys("webtestuser");
+            driver.findElement(By.id("user_session_password")).sendKeys("webtestuserPassword");
+            driver.findElement(By.name("commit")).click();
+
+            // Check the title of the page
+            assertEquals("Whydah Useradmin", driver.getTitle());
+        }
+    }
+
+    public void tearDown() {
+        logger.info("Logging out of WhydahUserAdmin");
+        driver.findElement(By.id("logout")).click();
+        assertEquals("Whydah Login", driver.getTitle());
+        logger.info("Closing Browser");
+        driver.quit();
+    }
+
     @Test
-    public void run() throws MalformedURLException {
-        // Create a new instance of the html unit driver
-        // Notice that the remainder of the code relies on the interface,
-        // not the implementation.
-        WebDriver driver = new HtmlUnitDriver();
-        //WebDriver driver = new ChromeDriver(DesiredCapabilities.chrome());
-
-        // And now use this to visit Google
-        driver.get("http://localhost:9996/useradmin/");
-
-
-
-        // Find the text input element by its name
-        driver.findElement(By.id("user_session_login")).sendKeys("admin");
-        driver.findElement(By.id("user_session_password")).sendKeys("admin");
-        driver.findElement(By.name("commit")).click();
-
-
-        // Check the title of the page
-        assertEquals("jalla", driver.getTitle());
-
+    public void start() throws Exception {
+        System.setProperty("IAM_MODE", "TEST_LOCALHOST");
+        final net.whydah.token.ServiceStarter sts = new net.whydah.token.ServiceStarter();
+        final net.whydah.identity.ServerRunner admin = new net.whydah.identity.ServerRunner();
+        final net.whydah.sso.ServerRunner sso = new net.whydah.sso.ServerRunner();
+        final net.whydah.identity.Main uib = new Main();
         /*
-        while (System.currentTimeMillis() < end) {
-            WebElement resultsDiv = driver.findElement(By.className("gssb_e"));
-
-            // If results have been returned, the results are displayed in a drop down.
-            if (resultsDiv.isDisplayed()) {
-              break;
+        new Thread(new Runnable() {
+            public void run() {
+                logger.info("Starting SecurityTokenService");
+                try {
+                    sts.main(null);
+                } catch (Exception e) { }
             }
+        }).start();
+
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    logger.info("Starting AdminWebApp");
+                    admin.main(null);
+                } catch (Exception e) { }
+            }
+        }).start();
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    logger.info("Starting Single Sign On");
+                    sso.main(null);
+                } catch (Exception e) { }
+            }
+        }).start();
+        */
+        new Thread(new Runnable() {
+            public void run() {
+                try {
+                    logger.info("Starting UserIdentityBackend");
+                    uib.main(null);
+                } catch (Exception e) { }
+            }
+        }).start();
+
+        Thread.sleep(10000);
+
+    }
+
+    @Test
+    public void testUserCreationAndDeletion() throws InterruptedException {
+        boolean workingTestSequence = false;
+        logger.info("Creating test user WebDriverTest");
+        driver.findElement(By.id("adduserbutton")).click();
+        try {
+            Thread.sleep(1000);
+            expectElement(By.id("userdetaillabel"));
+            expectElement(By.id("username")).sendKeys("webdrivertest");
+            expectElement(By.id("firstName")).sendKeys("Generated by");
+            expectElement(By.id("lastName")).sendKeys("Web Driver Test");
+            expectElement(By.id("email")).sendKeys("test@altran.com");
+            expectElement(By.id("cellPhone")).sendKeys("4712345678");
+            expectElement(By.id("saveChanges")).click();
+            logger.info("WebDriverTest user created");
+            WebElement alertMessage = expectElement(By.id("alertMessage"));
+            if(null != alertMessage && alertMessage.getText().contains("added successfully")){
+                workingTestSequence = true;
+            }else {
+                logger.error("Error creating test user: {}", alertMessage.getText());
+            }
+        } finally {
+            WebElement modalCloseButton = expectElement(By.id("close"));
+            if (modalCloseButton != null && modalCloseButton.isDisplayed()) {
+                logger.info("Closing modal window");
+                modalCloseButton.click();
+            }
+            logger.info("Searching for test user");
+            WebElement searchField = driver.findElement(By.id("searchfield"));
+            searchField.clear();
+            searchField.sendKeys("webdriver");
+
+            logger.info("Searching for test user row");
+            expectElement(By.id("rowid_webdrivertest")).click();
+
+            logger.info("Deleting test user WebDriverTest");
+            expectElement(By.id("userdetaillabel"));
+            driver.findElement(By.id("deleteUser")).click();
+
         }
 
-         */
+        assertTrue("Could not complete the test sequence, check logs!", workingTestSequence);
+    }
 
-        driver.quit();
+    private WebElement expectElement(By findByElement) throws InterruptedException {
+        // Sleep until the div we want is visible or 5 seconds is over
+        long end = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < end) {
+            try {
+                WebElement resultsDiv = driver.findElement(findByElement);
+                if (resultsDiv.isDisplayed()) {
+                    return resultsDiv;
+                }
+            } catch (Exception e) {
+                logger.debug("Could not find the element {}", findByElement.toString());
+            }
+            Thread.sleep(100);
+        }
+        return null;
     }
 }
